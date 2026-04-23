@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品图片精细标注工作台</title>
+    <!-- 禁用 Edge/Chrome 鼠标手势 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <style>
+        /* 全局禁用触摸和手势 */
+        html, body {
+            touch-action: none !important;
+            overscroll-behavior: none !important;
+        }
+        /* 禁用 Edge 鼠标手势导航 */
+        @supports (-ms-ime-align:auto) {
+            html { -ms-content-zooming: none; }
+        }
+    </style>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container { display: flex; height: 100vh; }
+        
+        /* 左侧图片列表 */
+        .sidebar {
+            width: 220px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .sidebar-header h3 { font-size: 14px; color: #e94560; margin-bottom: 10px; }
+        .upload-btn {
+            width: 100%;
+            padding: 10px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .upload-btn:hover { background: #ff6b6b; }
+        #fileInput { display: none; }
+        .image-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .image-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            margin-bottom: 6px;
+            background: #0f3460;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .image-item:hover { background: #1a4a7a; }
+        .image-item.active { background: #e94560; }
+        .image-item img {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .image-item .name {
+            flex: 1;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .image-item .status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+        }
+        .image-item .status.pending { background: #fbbf24; }
+        
+        /* 中间画布区域 */
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .toolbar {
+            height: 56px;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 8px;
+        }
+        .tool-group {
+            display: flex;
+            gap: 4px;
+            padding: 0 10px;
+            border-right: 1px solid #0f3460;
+        }
+        .tool-group:last-child { border-right: none; }
+        .tool-btn {
+            padding: 8px 12px;
+            background: #0f3460;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .tool-btn:hover { background: #1a4a7a; }
+        .tool-btn.active {
+            background: #e94560;
+            border-color: #ff6b6b;
+        }
+        .tool-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .zoom-display {
+            min-width: 60px;
+            text-align: center;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            background: #0f0f1a;
+            overflow: hidden;
+            position: relative;
+        }
+        .canvas-wrapper {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+        }
+        #mainCanvas {
+            display: block;
+            cursor: crosshair;
+            width: 100%;
+            height: 100%;
+        }
+        #mainCanvas.tool-select { cursor: default; }
+        #mainCanvas.tool-rect { cursor: crosshair; }
+        #mainCanvas.panning { cursor: grabbing !important; }
+        
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            color: #64748b;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+        .empty-state p { font-size: 14px; }
+        
+        /* 右侧标注面板 */
+        .right-panel {
+            width: 340px;
+            background: #16213e;
+            border-left: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .panel-section {
+            border-bottom: 1px solid #0f3460;
+            padding: 15px;
+        }
+        .panel-section h4 {
+            font-size: 13px;
+            color: #e94560;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* 自动识别区域 */
+        .auto-detect-section {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .auto-detect-section h5 {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+        .detect-btn {
+            width: 100%;
+            padding: 10px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+        .detect-btn:hover { background: #34d399; }
+        .detect-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        .detect-options {
+            display: flex;
+            gap: 10px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        .detect-options label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+        
+        /* 标注列表 */
+        .annotation-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .annotation-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .annotation-item:hover { background: #1a4a7a; }
+        .annotation-item.selected {
+            background: #e94560;
+        }
+        .annotation-item .color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            margin-right: 10px;
+        }
+        .annotation-item .info {
+            flex: 1;
+        }
+        .annotation-item .label {
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .annotation-item .coords {
+            font-size: 10px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        .annotation-item.selected .coords {
+            color: rgba(255,255,255,0.7);
+        }
+        .annotation-item .delete-btn {
+            padding: 4px 8px;
+            background: transparent;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .annotation-item:hover .delete-btn { opacity: 1; }
+        
+        /* 标签选择 */
+        .label-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .label-option {
+            padding: 8px 14px;
+            background: #0f3460;
+            border: 2px solid transparent;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .label-option:hover { background: #1a4a7a; }
+        .label-option.active {
+            border-color: currentColor;
+            background: rgba(255,255,255,0.1);
+        }
+        .label-option.erase { color: #ef4444; }
+        .label-option.brand { color: #8b5cf6; }
+        
+        /* 字体选择 */
+        .font-selector {
+            margin-top: 12px;
+            padding: 12px;
+            background: #0f3460;
+            border-radius: 8px;
+        }
+        .font-selector label {
+            display: block;
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+        .font-selector select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1a4a7a;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            color: #eee;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .font-selector select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .font-preview {
+            margin-top: 10px;
+            padding: 10px;
+            background: #16213e;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 18px;
+            color: #8b5cf6;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 微调提示 */
+        .fine-tune-hint {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: rgba(233, 69, 96, 0.1);
+            border-radius: 6px;
+            font-size: 11px;
+            color: #e94560;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* 处理按钮 */
+        .process-section {
+            padding: 15px;
+            margin-top: auto;
+        }
+        .process-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+        }
+        .process-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* 选项 */
+        .options-section {
+            padding: 15px;
+        }
+        .option-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        .option-row label { color: #94a3b8; }
+        .toggle {
+            width: 44px;
+            height: 24px;
+            background: #475569;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle.active { background: #e94560; }
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+        }
+        .toggle.active::after { transform: translateX(20px); }
+        
+        /* 加载动画 */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 100;
+        }
+        .loading-overlay.active { display: flex; }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #0f3460;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        
+        /* 结果预览 */
+        .result-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .result-modal.active { display: flex; }
+        .result-content {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+        }
+        .result-content h3 {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .result-content img {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 8px;
+        }
+        .result-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .result-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .btn-primary {
+            background: #e94560;
+            color: white;
+        }
+        .btn-secondary {
+            background: #0f3460;
+            color: #eee;
+        }
+        
+        /* 快捷键提示 */
+        .shortcuts-hint {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 11px;
+            color: #94a3b8;
+            line-height: 1.8;
+        }
+        .shortcuts-hint kbd {
+            background: #0f3460;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #eee;
+        }
+        
+        /* 精确缩放控制 */
+        .zoom-precision {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 6px;
+        }
+        .zoom-precision input[type="range"] {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            background: #1a4a7a;
+            border-radius: 3px;
+            outline: none;
+        }
+        .zoom-precision input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .zoom-precision .zoom-value {
+            min-width: 50px;
+            text-align: center;
+            font-size: 12px;
+            color: #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧图片列表 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>📁 图片列表</h3>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    + 上传图片
+                </button>
+                <input type="file" id="fileInput" multiple accept="image/*" onchange="handleFileSelect(event)">
+            </div>
+            <div class="image-list" id="imageList"></div>
+        </div>
+        
+        <!-- 中间画布 -->
+        <div class="main-area">
+            <div class="toolbar">
+                <div class="tool-group">
+                    <button class="tool-btn" id="btnSelect" onclick="setTool('select')" title="选择工具 (V)">
+                        🔍 选择
+                    </button>
+                    <button class="tool-btn active" id="btnRect" onclick="setTool('rect')" title="框选消除 (R)">
+                        ⬜ 框选
+                    </button>
+                </div>
+                <div class="tool-group">
+                    <button class="tool-btn" onclick="zoomOut()" title="缩小 (-)">−</button>
+                    <span class="zoom-display" id="zoomDisplay">100%</span>
+                    <button class="tool-btn" onclick="zoomIn()" title="放大 (+)">+</button>
+                    <button class="tool-btn" onclick="resetZoom()" title="重置 (0)">⟲</button>
+                </div>
+                <div class="tool-group">
+                    <button class="tool-btn" onclick="clearAnnotations()" title="清除全部 (Delete)">
+                        🗑 清除
+                    </button>
+                    <button class="tool-btn" onclick="detectAllSubjects()" title="自动识别全部">
+                        🎯 识别全部
+                    </button>
+                </div>
+            </div>
+            
+            <div class="canvas-container" id="canvasContainer">
+                <div class="empty-state" id="emptyState" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
+                    <div class="icon">🖼️</div>
+                    <p>上传图片开始标注</p>
+                </div>
+                <div class="canvas-wrapper" id="canvasWrapper" style="display:none;">
+                    <canvas id="mainCanvas"></canvas>
+                </div>
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                    <div class="loading-text" id="loadingText">处理中...</div>
+                </div>
+                <div class="shortcuts-hint">
+                    <kbd>V</kbd> 选择 <kbd>R</kbd> 框选 <kbd>右键拖</kbd> 平移 <kbd>滚轮</kbd> 缩放 <kbd>↑↓←→</kbd> 微调 <kbd>Delete</kbd> 清除
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧面板 -->
+        <div class="right-panel">
+            <div class="panel-section">
+                <h4>🎯 自动识别</h4>
+                <div class="auto-detect-section">
+                    <button class="detect-btn" id="detectBtn" onclick="detectCurrentSubject()">
+                        🎯 识别当前主体
+                    </button>
+                    <div class="detect-options">
+                        <label><input type="checkbox" id="useOcr" checked> 排除文字</label>
+                        <label><input type="checkbox" id="useEdge" checked> 边缘检测</label>
+                    </div>
+                </div>
+                
+                <!-- 精确缩放控制 -->
+                <div class="zoom-precision">
+                    <span style="font-size:11px;color:#94a3b8;">精确缩放</span>
+                    <input type="range" id="zoomSlider" min="20" max="500" value="100" oninput="setZoomFromSlider(this.value)">
+                    <span class="zoom-value" id="zoomValue">100%</span>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <h4>🏷️ 当前操作</h4>
+                <div class="label-selector">
+                    <div class="label-option erase active" onclick="setCurrentLabel('erase')">
+                        🔴 消除（背景填充）
+                    </div>
+                    <div class="label-option brand" onclick="setCurrentLabel('brand')">
+                        🟣 替换文字
+                    </div>
+                </div>
+                
+                <!-- 替换文字设置（仅在替换时显示） -->
+                <div class="font-selector" id="fontSelector" style="display:none;">
+                    <label>📝 替换文字</label>
+                    <div style="display:flex;gap:6px;margin-bottom:8px;">
+                        <select id="replaceTextPreset" onchange="onReplaceTextPresetChange()" 
+                                style="flex:1;padding:8px 12px;background:#1a4a7a;border:1px solid #0f3460;border-radius:6px;color:#eee;font-size:13px;">
+                            <!-- 动态加载词库 -->
+                        </select>
+                        <button onclick="openWordBankEditor()" title="编辑词库"
+                                style="padding:8px 12px;background:#0f3460;border:1px solid #1a4a7a;border-radius:6px;color:#4ade80;cursor:pointer;font-size:13px;">
+                            ⚙️ 编辑
+                        </button>
+                    </div>
+                    <input type="text" id="replaceTextInput" value="张三" placeholder="输入替换文字" 
+                           style="width:100%;padding:8px 12px;background:#1a4a7a;border:1px solid #0f3460;border-radius:6px;color:#eee;font-size:13px;margin-bottom:10px;"
+                           oninput="updateFontPreview()">
+                    
+                    <label>🔤 字体选择</label>
+                    <select id="fontFamily" onchange="updateFontPreview()">
+                        <option value="simhei" selected>黑体 (SimHei)</option>
+                        <option value="simsun">宋体 (SimSun)</option>
+                        <option value="microsoft-yahei">微软雅黑 (Microsoft YaHei)</option>
+                        <option value="kaiti">楷体 (KaiTi)</option>
+                        <option value="fangsong">仿宋 (FangSong)</option>
+                        <option value="arial">Arial</option>
+                        <option value="times">Times New Roman</option>
+                        <option value="courier">Courier New</option>
+                    </select>
+                    
+                    <label>🎨 字体颜色</label>
+                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                        <input type="color" id="fontColor" value="#000000" onchange="updateFontPreview()" 
+                               style="width:40px;height:32px;border:none;border-radius:4px;cursor:pointer;background:transparent;">
+                        <input type="text" id="fontColorText" value="#000000" onchange="updateFontColorFromText()" 
+                               style="flex:1;padding:6px 10px;background:#1a4a7a;border:1px solid #0f3460;border-radius:6px;color:#eee;font-size:12px;">
+                    </div>
+                    
+                    <div class="font-preview" id="fontPreview">xxx</div>
+                </div>
+                
+                <!-- 微调提示 -->
+                <div class="fine-tune-hint" id="fineTuneHint" style="display:none;">
+                    <span>⌨️</span>
+                    <span>选中框后使用 <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 微调位置</span>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <h4>📋 标注列表 (<span id="annoCount">0</span>)</h4>
+                <div class="annotation-list" id="annotationList"></div>
+            </div>
+            
+            <div class="options-section">
+                <div class="option-row">
+                    <label>保存训练数据</label>
+                    <div class="toggle" id="saveTrainingToggle" onclick="toggleSaveTraining()"></div>
+                </div>
+            </div>
+            
+            <div class="process-section">
+                <button class="process-btn" id="processBtn" onclick="processCurrent()">
+                    ▶ 处理当前图片
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 结果预览 -->
+    <div class="result-modal" id="resultModal">
+        <div class="result-content">
+            <h3>
+                处理结果
+                <button onclick="closeResult()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;">✕</button>
+            </h3>
+            <img id="resultImage" src="" alt="处理结果">
+            <div class="result-actions">
+                <button class="btn-primary" onclick="downloadResult()">💾 下载图片</button>
+                <button class="btn-secondary" onclick="closeResult()">继续编辑</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 全局状态 ====================
+        let images = [];
+        let currentImageIndex = -1;
+        let currentTool = 'rect';   // select | rect
+        let currentLabel = 'erase'; // erase | brand
+        let annotations = [];
+        let selectedAnnoIndex = -1;
+        let saveTraining = false;
+
+        // Viewport 状态 — 图片固定以原始像素绘制，通过 pan+zoom 变换
+        let viewZoom = 1.0;         // 当前缩放比例
+        let panX = 0, panY = 0;     // 画布平移偏移（逻辑像素）
+
+        // 画布
+        let canvas, ctx;
+        let canvasWrapper;
+
+        // 拖拽状态（框选 or 移动 or 调整大小）
+        let isDragging = false;
+        let dragStart = null;        // { imgX, imgY } 图片坐标
+        let resizeHandle = null;
+        let dragOffset = { x: 0, y: 0 };  // 拖动标注框时的偏移（图片坐标）
+
+        // 右键平移状态
+        let isPanning = false;
+        let panStart = { x: 0, y: 0 };
+        let panStartOffset = { x: 0, y: 0 };
+
+        // 图片原始尺寸（不随缩放变化）
+        let imgNatW = 0, imgNatH = 0;
+
+        // 微调步长（原图像素）
+        const FINE_TUNE_STEP = 1;
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            canvas = document.getElementById('mainCanvas');
+            ctx = canvas.getContext('2d');
+            canvasWrapper = document.getElementById('canvasWrapper');
+
+            // ===== 统一使用 Pointer Events 处理所有交互（更可靠） =====
+            // Pointer Events 自动统一鼠标、触摸、触控笔，且支持 setPointerCapture
+            canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+            canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+            canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+            canvas.addEventListener('pointercancel', onPointerCancel, { passive: false });
+            canvas.addEventListener('pointerleave', onPointerLeave, { passive: false });
+            canvas.addEventListener('wheel', onWheel, { passive: false });
+            
+            // ===== 禁用右键菜单和浏览器手势（多层防护） =====
+            // 1. 禁用右键菜单
+            canvas.addEventListener('contextmenu', e => { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                return false; 
+            }, true);
+            
+            // 2. 禁用拖拽和选择
+            canvas.addEventListener('dragstart', e => { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                return false; 
+            }, true);
+            canvas.addEventListener('selectstart', e => { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                return false; 
+            }, true);
+            
+            // 3. CSS 禁用触摸和选择
+            canvas.style.touchAction = 'none';
+            canvas.style.userSelect = 'none';
+            canvas.style.webkitUserSelect = 'none';
+            canvas.style.msUserSelect = 'none';
+            canvas.style.pointerEvents = 'auto';
+
+            document.addEventListener('keydown', onKeyDown);
+
+            // 响应容器尺寸变化
+            const ro = new ResizeObserver(() => { resizeCanvas(); redrawCanvas(); });
+            ro.observe(document.getElementById('canvasContainer'));
+        });
+        
+        // ==================== 文件处理 ====================
+        function handleFileSelect(e) {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        images.push({ file, img, name: file.name, annotations: [] });
+                        updateImageList();
+                        if (images.length === 1) selectImage(0);
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function updateImageList() {
+            const list = document.getElementById('imageList');
+            list.innerHTML = images.map((item, idx) => `
+                <div class="image-item ${idx === currentImageIndex ? 'active' : ''}" onclick="selectImage(${idx})">
+                    <img src="${item.img.src}" alt="">
+                    <span class="name">${item.name}</span>
+                    <span class="status ${item.annotations.length > 0 ? '' : 'pending'}"></span>
+                </div>
+            `).join('');
+        }
+
+        function selectImage(index) {
+            if (currentImageIndex >= 0) images[currentImageIndex].annotations = [...annotations];
+            currentImageIndex = index;
+            annotations = images[index].annotations || [];
+            selectedAnnoIndex = -1;
+            updateImageList();
+            loadImageToCanvas();
+            updateAnnotationList();
+        }
+
+        // ==================== 画布与 Viewport ====================
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        function loadImageToCanvas() {
+            if (currentImageIndex < 0) return;
+            const img = images[currentImageIndex].img;
+            imgNatW = img.naturalWidth || img.width;
+            imgNatH = img.naturalHeight || img.height;
+
+            resizeCanvas();
+
+            // 初始缩放：铺满容器
+            const sx = canvas.width / imgNatW;
+            const sy = canvas.height / imgNatH;
+            viewZoom = Math.min(sx, sy, 1) * 0.9;
+
+            // 居中
+            panX = (canvas.width  - imgNatW * viewZoom) / 2;
+            panY = (canvas.height - imgNatH * viewZoom) / 2;
+
+            document.getElementById('emptyState').style.display = 'none';
+            canvasWrapper.style.display = 'block';
+
+            updateZoomDisplay();
+            redrawCanvas();
+        }
+
+        // 屏幕坐标 → 图片原始像素坐标
+        function screenToImg(sx, sy) {
+            return {
+                x: (sx - panX) / viewZoom,
+                y: (sy - panY) / viewZoom
+            };
+        }
+
+        // 图片原始像素坐标 → 屏幕坐标
+        function imgToScreen(ix, iy) {
+            return {
+                x: ix * viewZoom + panX,
+                y: iy * viewZoom + panY
+            };
+        }
+
+        // 获取鼠标在图片中的坐标（原始像素）
+        function getMouseImgPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const sx = e.clientX - rect.left;
+            const sy = e.clientY - rect.top;
+            return screenToImg(sx, sy);
+        }
+
+        // 获取鼠标在屏幕上的坐标
+        function getMouseScreenPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function redrawCanvas() {
+            if (!canvas) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 棋盘格背景
+            ctx.save();
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (currentImageIndex < 0) { ctx.restore(); return; }
+
+            const img = images[currentImageIndex].img;
+
+            // 图片阴影
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 20;
+
+            // 绘制图片
+            ctx.drawImage(img, panX, panY, imgNatW * viewZoom, imgNatH * viewZoom);
+            ctx.shadowBlur = 0;
+
+            // 绘制所有标注框
+            annotations.forEach((anno, idx) => drawAnnotation(anno, idx === selectedAnnoIndex));
+
+            // 绘制正在框选的矩形
+            if (isDragging && dragStart && currentTool === 'rect' && !resizeHandle) {
+                const cur = currentDragImgPos;
+                if (cur) {
+                    const x0 = Math.min(dragStart.x, cur.x);
+                    const y0 = Math.min(dragStart.y, cur.y);
+                    const x1 = Math.max(dragStart.x, cur.x);
+                    const y1 = Math.max(dragStart.y, cur.y);
+                    const sp0 = imgToScreen(x0, y0);
+                    const sp1 = imgToScreen(x1, y1);
+                    const sw = sp1.x - sp0.x, sh = sp1.y - sp0.y;
+
+                    ctx.strokeStyle = currentLabel === 'erase' ? '#ef4444' : '#8b5cf6';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeRect(sp0.x, sp0.y, sw, sh);
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = currentLabel === 'erase' ? 'rgba(239,68,68,0.15)' : 'rgba(139,92,246,0.15)';
+                    ctx.fillRect(sp0.x, sp0.y, sw, sh);
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawAnnotation(anno, isSelected) {
+            const sp0 = imgToScreen(anno.bbox[0], anno.bbox[1]);
+            const sp1 = imgToScreen(anno.bbox[2], anno.bbox[3]);
+            const sw = sp1.x - sp0.x;
+            const sh = sp1.y - sp0.y;
+
+            const color = anno.label === 'erase' ? '#ef4444' : (anno.label === 'keep' ? '#10b981' : '#8b5cf6');
+
+            ctx.fillStyle = anno.label === 'erase' ? 'rgba(239,68,68,0.15)' : (anno.label === 'keep' ? 'rgba(16,185,129,0.10)' : 'rgba(139,92,246,0.15)');
+            ctx.fillRect(sp0.x, sp0.y, sw, sh);
+
+            ctx.strokeStyle = isSelected ? '#fff' : color;
+            ctx.lineWidth = isSelected ? 2.5 : 1.5;
+            ctx.strokeRect(sp0.x, sp0.y, sw, sh);
+
+            // 标签
+            ctx.fillStyle = color;
+            ctx.font = `bold 12px sans-serif`;
+            const label = anno.label === 'erase' ? '消除' : (anno.label === 'keep' ? '主体' : '替换');
+            ctx.fillText(label, sp0.x + 4, sp0.y - 4);
+
+            // 选中时显示调整手柄
+            if (isSelected) {
+                const hs = 8;
+                const corners = [
+                    [sp0.x, sp0.y], [sp1.x, sp0.y],
+                    [sp0.x, sp1.y], [sp1.x, sp1.y]
+                ];
+                ctx.fillStyle = '#3b82f6';
+                corners.forEach(([cx, cy]) => ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs));
+            }
+        }
+
+        let currentDragImgPos = null; // 框选时记录当前鼠标图像坐标
+        
+        // ==================== Pointer 交互（统一处理鼠标/触摸） ====================
+        // 当前捕获的 pointerId
+        let activePointerId = null;
+        
+        function onPointerDown(e) {
+            if (currentImageIndex < 0) return;
+            
+            // 只处理主按钮(0)和右键(2)
+            if (e.button !== 0 && e.button !== 2) return;
+            
+            // 捕获指针，阻止浏览器默认手势（关键！）
+            try {
+                canvas.setPointerCapture(e.pointerId);
+                activePointerId = e.pointerId;
+            } catch(err) {}
+            
+            // 阻止默认行为（防止 Edge 手势、右键菜单等）
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 右键 → 平移模式
+            if (e.button === 2) {
+                isPanning = true;
+                const sp = getMouseScreenPos(e);
+                panStart = { x: sp.x, y: sp.y };
+                panStartOffset = { x: panX, y: panY };
+                canvas.classList.add('panning');
+                return;
+            }
+
+            // 左键 → 框选或选择
+            const pos = getMouseImgPos(e);
+
+            if (currentTool === 'select') {
+                const handle = getResizeHandle(e);
+                if (handle) {
+                    resizeHandle = handle;
+                    isDragging = true;
+                    return;
+                }
+                const clickedIndex = annotations.findIndex(anno => isPointInAnno(pos, anno));
+                if (clickedIndex >= 0) {
+                    selectedAnnoIndex = clickedIndex;
+                    isDragging = true;
+                    const anno = annotations[clickedIndex];
+                    dragOffset.x = pos.x - anno.bbox[0];
+                    dragOffset.y = pos.y - anno.bbox[1];
+                    updateAnnotationList();
+                    updateFineTuneHint();
+                } else {
+                    selectedAnnoIndex = -1;
+                    updateFineTuneHint();
+                    updateAnnotationList();
+                }
+                redrawCanvas();
+            } else if (currentTool === 'rect') {
+                isDragging = true;
+                dragStart = pos;
+                currentDragImgPos = pos;
+            }
+        }
+
+        function onPointerMove(e) {
+            // 只处理当前捕获的指针
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            
+            // 阻止默认行为
+            if (isPanning || isDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            // 右键平移
+            if (isPanning) {
+                const sp = getMouseScreenPos(e);
+                panX = panStartOffset.x + (sp.x - panStart.x);
+                panY = panStartOffset.y + (sp.y - panStart.y);
+                redrawCanvas();
+                return;
+            }
+
+            const pos = getMouseImgPos(e);
+
+            if (!isDragging) {
+                // 更新光标
+                updateCursor(e, pos);
+                return;
+            }
+
+            if (resizeHandle && selectedAnnoIndex >= 0) {
+                resizeAnnotation(pos);
+                redrawCanvas();
+            } else if (currentTool === 'select' && selectedAnnoIndex >= 0) {
+                moveAnnotation(pos);
+                redrawCanvas();
+            } else if (currentTool === 'rect') {
+                currentDragImgPos = pos;
+                redrawCanvas();
+            }
+        }
+
+        function onPointerUp(e) {
+            // 只处理当前捕获的指针
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            
+            // 释放指针捕获
+            if (activePointerId === e.pointerId) {
+                try {
+                    canvas.releasePointerCapture(e.pointerId);
+                } catch(err) {}
+                activePointerId = null;
+            }
+            
+            // 阻止默认行为
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 右键结束平移
+            if (e.button === 2) {
+                isPanning = false;
+                canvas.classList.remove('panning');
+                updateCursor(e, getMouseImgPos(e));
+                return;
+            }
+
+            if (e.button !== 0) return;
+
+            if (isDragging && currentTool === 'rect' && dragStart && !resizeHandle) {
+                const pos = getMouseImgPos(e);
+                const x0 = Math.round(Math.min(dragStart.x, pos.x));
+                const y0 = Math.round(Math.min(dragStart.y, pos.y));
+                const x1 = Math.round(Math.max(dragStart.x, pos.x));
+                const y1 = Math.round(Math.max(dragStart.y, pos.y));
+
+                // 裁切到图片范围
+                const bx0 = Math.max(0, Math.min(imgNatW, x0));
+                const by0 = Math.max(0, Math.min(imgNatH, y0));
+                const bx1 = Math.max(0, Math.min(imgNatW, x1));
+                const by1 = Math.max(0, Math.min(imgNatH, y1));
+
+                if (bx1 - bx0 > 5 && by1 - by0 > 5) {
+                    const anno = {
+                        label: currentLabel,
+                        bbox: [bx0, by0, bx1, by1],
+                        text: currentLabel === 'brand' ? 'brand' : ''
+                    };
+                    annotations.push(anno);
+                    selectedAnnoIndex = annotations.length - 1;
+                    updateAnnotationList();
+                    updateFineTuneHint();
+                }
+            }
+
+            isDragging = false;
+            dragStart = null;
+            resizeHandle = null;
+            currentDragImgPos = null;
+            updateCursor(e, getMouseImgPos(e));
+            redrawCanvas();
+        }
+        
+        function onPointerCancel(e) {
+            // 指针被取消（例如系统接管）
+            if (activePointerId === e.pointerId) {
+                try {
+                    canvas.releasePointerCapture(e.pointerId);
+                } catch(err) {}
+                activePointerId = null;
+            }
+            
+            isPanning = false;
+            isDragging = false;
+            canvas.classList.remove('panning');
+            dragStart = null;
+            resizeHandle = null;
+            currentDragImgPos = null;
+            redrawCanvas();
+        }
+
+        function onPointerLeave(e) {
+            // 指针离开画布
+            if (isPanning && activePointerId === e.pointerId) {
+                isPanning = false;
+                canvas.classList.remove('panning');
+            }
+            if (isDragging && currentTool === 'rect' && activePointerId === e.pointerId) {
+                // 指针离开时取消框选
+                isDragging = false;
+                dragStart = null;
+                currentDragImgPos = null;
+                redrawCanvas();
+            }
+        }
+
+        function updateCursor(e, imgPos) {
+            if (isPanning) { canvas.style.cursor = 'grabbing'; return; }
+            const handle = getResizeHandle(e);
+            if (handle) { canvas.style.cursor = handle.cursor; return; }
+            if (currentTool === 'select') {
+                const hitIdx = annotations.findIndex(a => isPointInAnno(imgPos, a));
+                canvas.style.cursor = hitIdx >= 0 ? 'move' : 'default';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+        }
+
+        function onWheel(e) {
+            e.preventDefault();
+            const sp = getMouseScreenPos(e);
+            const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            const newZoom = Math.max(0.1, Math.min(10, viewZoom * factor));
+
+            // 以鼠标位置为中心缩放：调整 pan 使鼠标下的图像点不变
+            panX = sp.x - (sp.x - panX) * (newZoom / viewZoom);
+            panY = sp.y - (sp.y - panY) * (newZoom / viewZoom);
+            viewZoom = newZoom;
+
+            updateZoomDisplay();
+            redrawCanvas();
+        }
+        
+        // ==================== 标注框操作 ====================
+        function isPointInAnno(pos, anno) {
+            return pos.x >= anno.bbox[0] && pos.x <= anno.bbox[2] &&
+                   pos.y >= anno.bbox[1] && pos.y <= anno.bbox[3];
+        }
+
+        function getResizeHandle(e) {
+            if (selectedAnnoIndex < 0) return null;
+            const anno = annotations[selectedAnnoIndex];
+            const hs = 8; // handle size in screen px
+
+            const corners = [
+                { imgX: anno.bbox[0], imgY: anno.bbox[1], cursor: 'nw-resize', dx: 1, dy: 1 },
+                { imgX: anno.bbox[2], imgY: anno.bbox[1], cursor: 'ne-resize', dx: -1, dy: 1 },
+                { imgX: anno.bbox[0], imgY: anno.bbox[3], cursor: 'sw-resize', dx: 1, dy: -1 },
+                { imgX: anno.bbox[2], imgY: anno.bbox[3], cursor: 'se-resize', dx: -1, dy: -1 }
+            ];
+
+            const sp = getMouseScreenPos(e);
+            for (const h of corners) {
+                const s = imgToScreen(h.imgX, h.imgY);
+                if (Math.abs(sp.x - s.x) < hs && Math.abs(sp.y - s.y) < hs) return h;
+            }
+            return null;
+        }
+
+        function resizeAnnotation(imgPos) {
+            const anno = annotations[selectedAnnoIndex];
+            const h = resizeHandle;
+
+            if (h.dx > 0) {
+                // 左边
+                anno.bbox[0] = Math.round(Math.max(0, Math.min(anno.bbox[2] - 5, imgPos.x)));
+            } else {
+                // 右边
+                anno.bbox[2] = Math.round(Math.max(anno.bbox[0] + 5, Math.min(imgNatW, imgPos.x)));
+            }
+            if (h.dy > 0) {
+                // 上边
+                anno.bbox[1] = Math.round(Math.max(0, Math.min(anno.bbox[3] - 5, imgPos.y)));
+            } else {
+                // 下边
+                anno.bbox[3] = Math.round(Math.max(anno.bbox[1] + 5, Math.min(imgNatH, imgPos.y)));
+            }
+        }
+
+        function moveAnnotation(imgPos) {
+            const anno = annotations[selectedAnnoIndex];
+            const w = anno.bbox[2] - anno.bbox[0];
+            const h = anno.bbox[3] - anno.bbox[1];
+            let nx = Math.round(imgPos.x - dragOffset.x);
+            let ny = Math.round(imgPos.y - dragOffset.y);
+            nx = Math.max(0, Math.min(imgNatW - w, nx));
+            ny = Math.max(0, Math.min(imgNatH - h, ny));
+            anno.bbox[0] = nx;
+            anno.bbox[1] = ny;
+            anno.bbox[2] = nx + w;
+            anno.bbox[3] = ny + h;
+        }
+
+        // ==================== 键盘微调 ====================
+        function fineTuneAnnotation(dx, dy) {
+            if (selectedAnnoIndex < 0) return;
+            const anno = annotations[selectedAnnoIndex];
+            const w = anno.bbox[2] - anno.bbox[0];
+            const h = anno.bbox[3] - anno.bbox[1];
+            // dx/dy 直接是原图像素步长
+            anno.bbox[0] = Math.max(0, Math.min(imgNatW - w, anno.bbox[0] + dx));
+            anno.bbox[1] = Math.max(0, Math.min(imgNatH - h, anno.bbox[1] + dy));
+            anno.bbox[2] = anno.bbox[0] + w;
+            anno.bbox[3] = anno.bbox[1] + h;
+            updateAnnotationList();
+            redrawCanvas();
+        }
+
+        // ==================== 工具切换 ====================
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('btn' + tool.charAt(0).toUpperCase() + tool.slice(1)).classList.add('active');
+            // 只修改光标，不重置 className（避免清掉 panning 等状态）
+            canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+        }
+        
+        function setCurrentLabel(label) {
+            currentLabel = label;
+            document.querySelectorAll('.label-option').forEach(opt => opt.classList.remove('active'));
+            document.querySelector('.label-option.' + label).classList.add('active');
+            
+            // 显示/隐藏字体选择器
+            document.getElementById('fontSelector').style.display = label === 'brand' ? 'block' : 'none';
+        }
+        
+        // 替换文字词库选择变化
+        function onReplaceTextPresetChange() {
+            const preset = document.getElementById('replaceTextPreset').value;
+            const textInput = document.getElementById('replaceTextInput');
+            
+            if (preset !== 'custom') {
+                // 选择预设词库，更新输入框
+                textInput.value = preset;
+                updateFontPreview();
+            }
+        }
+        
+        function updateFontPreview() {
+            const font = document.getElementById('fontFamily').value;
+            const text = document.getElementById('replaceTextInput').value || 'xxx';
+            const color = document.getElementById('fontColor').value;
+            const preview = document.getElementById('fontPreview');
+            const presetSelect = document.getElementById('replaceTextPreset');
+            
+            // 同步词库下拉框和输入框
+            let foundInPreset = false;
+            for (let i = 0; i < presetSelect.options.length; i++) {
+                if (presetSelect.options[i].value === text) {
+                    presetSelect.selectedIndex = i;
+                    foundInPreset = true;
+                    break;
+                }
+            }
+            if (!foundInPreset) {
+                presetSelect.value = 'custom';
+            }
+            
+            const fontMap = {
+                'simhei': 'SimHei, sans-serif',
+                'simsun': 'SimSun, serif',
+                'microsoft-yahei': '"Microsoft YaHei", sans-serif',
+                'kaiti': 'KaiTi, serif',
+                'fangsong': 'FangSong, serif',
+                'arial': 'Arial, sans-serif',
+                'times': '"Times New Roman", serif',
+                'courier': '"Courier New", monospace'
+            };
+            
+            preview.style.fontFamily = fontMap[font] || 'sans-serif';
+            preview.style.color = color;
+            preview.textContent = text;
+            
+            // 同步颜色文本框
+            document.getElementById('fontColorText').value = color;
+        }
+        
+        function updateFontColorFromText() {
+            const colorText = document.getElementById('fontColorText').value;
+            document.getElementById('fontColor').value = colorText;
+            updateFontPreview();
+        }
+        
+        function updateFineTuneHint() {
+            const hint = document.getElementById('fineTuneHint');
+            hint.style.display = selectedAnnoIndex >= 0 ? 'flex' : 'none';
+        }
+        
+        function zoomIn() {
+            zoomAroundCenter(viewZoom * 1.25);
+        }
+
+        function zoomOut() {
+            zoomAroundCenter(viewZoom / 1.25);
+        }
+
+        function resetZoom() {
+            if (currentImageIndex < 0) return;
+            const sx = canvas.width / imgNatW;
+            const sy = canvas.height / imgNatH;
+            viewZoom = Math.min(sx, sy, 1) * 0.9;
+            panX = (canvas.width  - imgNatW * viewZoom) / 2;
+            panY = (canvas.height - imgNatH * viewZoom) / 2;
+            updateZoomDisplay();
+            redrawCanvas();
+        }
+
+        function setZoomFromSlider(value) {
+            zoomAroundCenter(value / 100);
+        }
+
+        // 以画布中心为锚点缩放
+        function zoomAroundCenter(newZoom) {
+            newZoom = Math.max(0.1, Math.min(10, newZoom));
+            const cx = canvas.width  / 2;
+            const cy = canvas.height / 2;
+            panX = cx - (cx - panX) * (newZoom / viewZoom);
+            panY = cy - (cy - panY) * (newZoom / viewZoom);
+            viewZoom = newZoom;
+            updateZoomDisplay();
+            redrawCanvas();
+        }
+
+        function updateZoomDisplay() {
+            const percent = Math.round(viewZoom * 100);
+            document.getElementById('zoomDisplay').textContent = percent + '%';
+            document.getElementById('zoomValue').textContent = percent + '%';
+            document.getElementById('zoomSlider').value = Math.min(500, percent);
+        }
+        
+        // ==================== 标注列表 ====================
+        function updateAnnotationList() {
+            document.getElementById('annoCount').textContent = annotations.length;
+            
+            const list = document.getElementById('annotationList');
+            if (annotations.length === 0) {
+                list.innerHTML = '<div style="text-align:center;color:#64748b;padding:20px;font-size:12px;">暂无标注，使用框选工具添加</div>';
+                return;
+            }
+            
+            list.innerHTML = annotations.map((anno, idx) => {
+                const color = anno.label === 'erase' ? '#ef4444' : '#8b5cf6';
+                const label = anno.label === 'erase' ? '消除' : '替换';
+                return `
+                    <div class="annotation-item ${idx === selectedAnnoIndex ? 'selected' : ''}" onclick="selectAnnotation(${idx})">
+                        <div class="color" style="background:${color}"></div>
+                        <div class="info">
+                            <div class="label">${label}</div>
+                            <div class="coords">[${anno.bbox.join(', ')}]</div>
+                        </div>
+                        <button class="delete-btn" onclick="event.stopPropagation();deleteAnnotation(${idx})">删除</button>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectAnnotation(idx) {
+            selectedAnnoIndex = idx;
+            updateAnnotationList();
+            updateFineTuneHint();
+            redrawCanvas();
+        }
+        
+        function deleteAnnotation(idx) {
+            annotations.splice(idx, 1);
+            if (selectedAnnoIndex === idx) {
+                selectedAnnoIndex = -1;
+                updateFineTuneHint();
+            } else if (selectedAnnoIndex > idx) {
+                selectedAnnoIndex--;
+            }
+            updateAnnotationList();
+            redrawCanvas();
+        }
+        
+        function clearAnnotations() {
+            if (annotations.length === 0) return;
+            if (!confirm('确定要清除所有标注吗？')) return;
+            annotations = [];
+            selectedAnnoIndex = -1;
+            updateFineTuneHint();
+            updateAnnotationList();
+            redrawCanvas();
+        }
+        
+        function toggleSaveTraining() {
+            saveTraining = !saveTraining;
+            document.getElementById('saveTrainingToggle').classList.toggle('active', saveTraining);
+        }
+        
+        // ==================== 自动识别 ====================
+        async function detectCurrentSubject() {
+            if (currentImageIndex < 0) return;
+            
+            const btn = document.getElementById('detectBtn');
+            btn.disabled = true;
+            btn.textContent = '🔍 识别中...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', images[currentImageIndex].file);
+                formData.append('options', JSON.stringify({
+                    use_ocr: document.getElementById('useOcr').checked,
+                    use_edge: document.getElementById('useEdge').checked
+                }));
+                
+                const res = await fetch('/detect_subject', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                
+                if (data.bbox) {
+                    // 添加识别到的主体框（作为保留区域，不消除）
+                    annotations.push({
+                        label: 'keep',
+                        bbox: data.bbox,
+                        text: 'subject',
+                        auto: true
+                    });
+                    
+                    // 同时添加四周的背景区域用于消除
+                    const [sx0, sy0, sx1, sy1] = data.bbox;
+                    const iw = imgNatW, ih = imgNatH;
+                    
+                    // 上背景
+                    if (sy0 > 50) {
+                        annotations.push({
+                            label: 'erase',
+                            bbox: [0, 0, iw, sy0],
+                            text: 'background_top',
+                            auto: true
+                        });
+                    }
+                    // 下背景
+                    if (ih - sy1 > 50) {
+                        annotations.push({
+                            label: 'erase',
+                            bbox: [0, sy1, iw, ih],
+                            text: 'background_bottom',
+                            auto: true
+                        });
+                    }
+                    // 左背景
+                    if (sx0 > 50) {
+                        annotations.push({
+                            label: 'erase',
+                            bbox: [0, sy0, sx0, sy1],
+                            text: 'background_left',
+                            auto: true
+                        });
+                    }
+                    // 右背景
+                    if (iw - sx1 > 50) {
+                        annotations.push({
+                            label: 'erase',
+                            bbox: [sx1, sy0, iw, sy1],
+                            text: 'background_right',
+                            auto: true
+                        });
+                    }
+                    
+                    selectedAnnoIndex = annotations.length - 1;
+                    updateAnnotationList();
+                    updateFineTuneHint();
+                    redrawCanvas();
+                    
+                    alert(`✅ 识别成功！置信度: ${(data.confidence * 100).toFixed(1)}%\n已自动添加背景消除区域`);
+                } else {
+                    alert('⚠️ 未能识别到主体，请手动框选');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('❌ 识别失败: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎯 识别当前主体';
+            }
+        }
+        
+        async function detectAllSubjects() {
+            if (images.length === 0) return;
+            
+            const btn = event.target;
+            btn.disabled = true;
+            
+            for (let i = 0; i < images.length; i++) {
+                selectImage(i);
+                await detectCurrentSubject();
+                await new Promise(r => setTimeout(r, 500));
+            }
+            
+            btn.disabled = false;
+            alert('✅ 全部识别完成！');
+        }
+        
+        // ==================== 处理 ====================
+        async function processCurrent() {
+            if (currentImageIndex < 0) return;
+            if (annotations.length === 0) {
+                alert('请先添加标注');
+                return;
+            }
+            
+            // 过滤出需要处理的标注（排除auto标记的keep）
+            const processAnnos = annotations.filter(a => a.label !== 'keep');
+            if (processAnnos.length === 0) {
+                alert('没有需要处理的标注');
+                return;
+            }
+            
+            const loading = document.getElementById('loadingOverlay');
+            loading.classList.add('active');
+            document.getElementById('loadingText').textContent = '处理中...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', images[currentImageIndex].file);
+                formData.append('options', JSON.stringify({
+                    annotations: processAnnos,
+                    replace_text: document.getElementById('replaceTextInput').value,
+                    font_family: document.getElementById('fontFamily').value,
+                    font_color: document.getElementById('fontColor').value,
+                    save_training: saveTraining,
+                    filename: images[currentImageIndex].name,
+                    zoom_scale: viewZoom  // 传递当前缩放比例用于精确处理
+                }));
+                
+                const res = await fetch('/process_with_annotations', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || '处理失败');
+                }
+                
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                
+                document.getElementById('resultImage').src = url;
+                document.getElementById('resultModal').classList.add('active');
+                
+                // 标记为已处理
+                images[currentImageIndex].processed = true;
+                updateImageList();
+                
+            } catch (err) {
+                console.error(err);
+                alert('❌ 处理失败: ' + err.message);
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+        
+        function closeResult() {
+            document.getElementById('resultModal').classList.remove('active');
+        }
+        
+        function downloadResult() {
+            const link = document.createElement('a');
+            link.href = document.getElementById('resultImage').src;
+            link.download = 'processed_' + images[currentImageIndex].name;
+            link.click();
+        }
+        
+        // ==================== 键盘快捷键 ====================
+        function onKeyDown(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            
+            switch (e.key.toLowerCase()) {
+                case 'v':
+                    setTool('select');
+                    break;
+                case 'r':
+                    setTool('rect');
+                    break;
+                case '+':
+                case '=':
+                    zoomIn();
+                    break;
+                case '-':
+                    zoomOut();
+                    break;
+                case '0':
+                    resetZoom();
+                    break;
+                case 'delete':
+                case 'backspace':
+                    if (selectedAnnoIndex >= 0) {
+                        deleteAnnotation(selectedAnnoIndex);
+                    }
+                    break;
+                case 'arrowup':
+                    e.preventDefault();
+                    fineTuneAnnotation(0, -FINE_TUNE_STEP);
+                    break;
+                case 'arrowdown':
+                    e.preventDefault();
+                    fineTuneAnnotation(0, FINE_TUNE_STEP);
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    fineTuneAnnotation(-FINE_TUNE_STEP, 0);
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    fineTuneAnnotation(FINE_TUNE_STEP, 0);
+                    break;
+            }
+        }
+    </script>
+    
+    <!-- 词库编辑弹窗 -->
+    <div id="wordBankModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#0f3460;padding:20px;border-radius:12px;width:90%;max-width:400px;max-height:80vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h3 style="margin:0;color:#4ade80;font-size:16px;">📝 编辑词库</h3>
+                <button onclick="closeWordBankEditor()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;">×</button>
+            </div>
+            
+            <div style="margin-bottom:15px;">
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input type="text" id="newWordInput" placeholder="输入新词..." 
+                           style="flex:1;padding:8px 12px;background:#1a4a7a;border:1px solid #0f3460;border-radius:6px;color:#eee;font-size:13px;"
+                           onkeypress="if(event.key==='Enter')addWord()">
+                    <button onclick="addWord()" 
+                            style="padding:8px 16px;background:#4ade80;border:none;border-radius:6px;color:#0f3460;cursor:pointer;font-size:13px;font-weight:bold;">
+                        + 添加
+                    </button>
+                </div>
+            </div>
+            
+            <div id="wordBankList" style="max-height:300px;overflow-y:auto;">
+                <!-- 词库列表动态生成 -->
+            </div>
+            
+            <div style="margin-top:15px;padding-top:15px;border-top:1px solid #1a4a7a;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#94a3b8;font-size:11px;">点击 🗑️ 删除</span>
+                <button onclick="resetWordBank()" 
+                        style="padding:6px 12px;background:#e94560;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:11px;">
+                    ↺ 恢复默认
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ==================== 词库管理 ====================
+        
+        // 默认词库 - 包含特殊符号如®（注册商标）
+        const DEFAULT_WORD_BANK = ['张三', '栗色®', '王五®'];
+        const WORD_BANK_KEY = 'productImageCleaner_wordBank';
+        
+        // 获取词库（从 localStorage 或默认）
+        function getWordBank() {
+            const saved = localStorage.getItem(WORD_BANK_KEY);
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {
+                    return DEFAULT_WORD_BANK;
+                }
+            }
+            return DEFAULT_WORD_BANK;
+        }
+        
+        // 保存词库
+        function saveWordBank(wordBank) {
+            localStorage.setItem(WORD_BANK_KEY, JSON.stringify(wordBank));
+        }
+        
+        // 初始化词库下拉框
+        function initWordBankSelect() {
+            const select = document.getElementById('replaceTextPreset');
+            const wordBank = getWordBank();
+            const currentValue = document.getElementById('replaceTextInput').value;
+            
+            select.innerHTML = '<option value="custom">✏️ 自定义输入...</option>';
+            
+            wordBank.forEach(word => {
+                const option = document.createElement('option');
+                option.value = word;
+                option.textContent = word;
+                if (word === currentValue) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+        
+        // 打开词库编辑器
+        function openWordBankEditor() {
+            const modal = document.getElementById('wordBankModal');
+            modal.style.display = 'flex';
+            renderWordBankList();
+            document.getElementById('newWordInput').focus();
+        }
+        
+        // 关闭词库编辑器
+        function closeWordBankEditor() {
+            document.getElementById('wordBankModal').style.display = 'none';
+        }
+        
+        // 渲染词库列表
+        function renderWordBankList() {
+            const list = document.getElementById('wordBankList');
+            const wordBank = getWordBank();
+            
+            list.innerHTML = '';
+            wordBank.forEach((word, index) => {
+                const item = document.createElement('div');
+                item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1a4a7a;border-radius:6px;margin-bottom:6px;';
+                item.innerHTML = `
+                    <span style="color:#eee;font-size:13px;">${word}</span>
+                    <div style="display:flex;gap:6px;">
+                        <button onclick="useWord('${word}')" title="使用此词"
+                                style="padding:4px 8px;background:#0f3460;border:1px solid #4ade80;border-radius:4px;color:#4ade80;cursor:pointer;font-size:11px;">
+                            使用
+                        </button>
+                        <button onclick="deleteWord(${index})" title="删除"
+                                style="padding:4px 8px;background:#0f3460;border:1px solid #ef4444;border-radius:4px;color:#ef4444;cursor:pointer;font-size:11px;">
+                            🗑️
+                        </button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        // 添加新词
+        function addWord() {
+            const input = document.getElementById('newWordInput');
+            const word = input.value.trim();
+            
+            if (!word) {
+                alert('请输入词库内容');
+                return;
+            }
+            
+            const wordBank = getWordBank();
+            if (wordBank.includes(word)) {
+                alert('该词已存在');
+                return;
+            }
+            
+            wordBank.push(word);
+            saveWordBank(wordBank);
+            input.value = '';
+            renderWordBankList();
+            initWordBankSelect();
+        }
+        
+        // 删除词
+        function deleteWord(index) {
+            const wordBank = getWordBank();
+            wordBank.splice(index, 1);
+            saveWordBank(wordBank);
+            renderWordBankList();
+            initWordBankSelect();
+        }
+        
+        // 使用某个词
+        function useWord(word) {
+            document.getElementById('replaceTextInput').value = word;
+            updateFontPreview();
+            closeWordBankEditor();
+        }
+        
+        // 恢复默认词库
+        function resetWordBank() {
+            if (confirm('确定要恢复默认词库吗？这将清除所有自定义词库。')) {
+                localStorage.removeItem(WORD_BANK_KEY);
+                initWordBankSelect();
+                renderWordBankList();
+                alert('已恢复默认词库');
+            }
+        }
+        
+        // 点击弹窗外部关闭
+        document.getElementById('wordBankModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeWordBankEditor();
+            }
+        });
+        
+        // 页面加载时初始化词库
+        document.addEventListener('DOMContentLoaded', function() {
+            initWordBankSelect();
+        });
+    </script>
+</body>
+</html>
